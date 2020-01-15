@@ -1,60 +1,81 @@
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <unistd.h>
+
+// C library headers
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-/* シリアルインターフェースに対応するデバイスファイル */
-#define SERIAL_PORT "/dev/ttyUSB0"
+// Linux headers
+#include <fcntl.h>   // Contains file controls like O_RDWR
+#include <errno.h>   // Error integer and strerror() function
+#include <termios.h> // Contains POSIX terminal control definitions
+#include <unistd.h>  // write(), read(), close()
 
 int main()
 {
+  int serial_port = open("/dev/ttyUSB0", O_RDWR);
 
-  /* シリアルインターフェースのオープン */
-  /* O_RDWR: 入出力用にオープン */
-  /* O_NOCTTY: ノイズ等による不意のctrl-cを防ぐため，tty制御なし */
-  /* シリアルインターフェースをint型変数"fd"の名前で扱えるように */
-  int fd;
-  fd = open(SERIAL_PORT, O_RDWR | O_NOCTTY);
-  if (fd < 0)
+  // Create new termios struc, we call it 'tty' for convention
+  struct termios tty;
+  memset(&tty, 0, sizeof tty);
+
+  // Read in existing settings, and handle any error
+  if (tcgetattr(serial_port, &tty) != 0)
   {
-    printf("%s doesn't open it\n", SERIAL_PORT);
-    return -1;
+    printf("Error %i from tcgetattr: %s\n", errno, strerror(errno));
   }
 
-  /* シリアルポートの設定を行う変数を宣言 */
-  struct termios oldtio, newtio;
-  /* 現在の設定を oldtio に保存 */
-  tcgetattr(fd, &oldtio);
-  /* 今回使用する設定 newtio に現在の設定 oldtio をコピー */
-  newtio = oldtio;
-  cfsetspeed(&newtio, B9600); /* 入出力スピード設定 */
+  tty.c_cflag &= ~PARENB;        // Clear parity bit, disabling parity (most common)
+  tty.c_cflag &= ~CSTOPB;        // Clear stop field, only one stop bit used in communication (most common)
+  tty.c_cflag |= CS8;            // 8 bits per byte (most common)
+  tty.c_cflag &= ~CRTSCTS;       // Disable RTS/CTS hardware flow control (most common)
+  tty.c_cflag |= CREAD | CLOCAL; // Turn on READ & ignore ctrl lines (CLOCAL = 1)
 
-  /* 27行目-42行目までの設定を有効にする */
-  tcflush(fd, TCIFLUSH);
-  tcsetattr(fd, TCSANOW, &newtio); /* 設定を有効に */
+  tty.c_lflag &= ~ICANON;
+  tty.c_lflag &= ~ECHO;                                                        // Disable echo
+  tty.c_lflag &= ~ECHOE;                                                       // Disable erasure
+  tty.c_lflag &= ~ECHONL;                                                      // Disable new-line echo
+  tty.c_lflag &= ~ISIG;                                                        // Disable interpretation of INTR, QUIT and SUSP
+  tty.c_iflag &= ~(IXON | IXOFF | IXANY);                                      // Turn off s/w flow ctrl
+  tty.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL); // Disable any special handling of received bytes
 
-  /* ここからがユーザ固有の処理:例として文字列 hello を送信(write関数)．受信はread関*/
-  unsigned char buf[11];
+  tty.c_oflag &= ~OPOST; // Prevent special interpretation of output bytes (e.g. newline chars)
+  tty.c_oflag &= ~ONLCR; // Prevent conversion of newline to carriage return/line feed
+  // tty.c_oflag &= ~OXTABS; // Prevent conversion of tabs to spaces (NOT PRESENT ON LINUX)
+  // tty.c_oflag &= ~ONOEOT; // Prevent removal of C-d chars (0x004) in output (NOT PRESENT ON LINUX)
+
+  tty.c_cc[VTIME] = 10; // Wait for up to 1s (10 deciseconds), returning as soon as any data is received.
+  tty.c_cc[VMIN] = 0;
+
+  // Set in/out baud rate to be 9600
+  cfsetispeed(&tty, B115200);
+  cfsetospeed(&tty, B115200);
+
+  if (tcsetattr(serial_port, TCSANOW, &tty) != 0)
+  {
+    printf("Error %i from tcsetattr: %s\n", errno, strerror(errno));
+  }
+
+  unsigned char read_buf[128];
+  memset(&read_buf, '\0', sizeof(read_buf));
+  int num_bytes;
   while (1)
   {
-    // strcpy(buf, "hello");
-    // write(fd, buf, sizeof(buf)); /* write関数:送信処理 */
-    read(fd, buf, sizeof(buf));
-    if (buf[0] == 0x55)
+    num_bytes = read(serial_port, &read_buf, sizeof(read_buf));
+    if (num_bytes < 0)
     {
-      if (buf[1] == 0x53)
+      printf("Error reading: %s \n", strerror(errno));
+    }
+   // printf("Received message: %s \n", read_buf);
+    for (int i = 0; i <= 128-11; i++)
+    {
+      if (read_buf[i] == 0x55)
       {
-        printf("|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|\n", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10]);
+        if (read_buf[i + 1] == 0x53)
+        {
+          printf("|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|\n", read_buf[i], read_buf[i + 1], read_buf[i + 2], read_buf[i + 3], read_buf[i + 4], read_buf[i + 5], read_buf[i + 6], read_buf[i + 7], read_buf[i + 8], read_buf[i + 9], read_buf[i + 10]);
+        }
       }
     }
   }
-  /* デバイスの設定を戻す */
-  tcsetattr(fd, TCSANOW, &oldtio);
-  close(fd);
-  return 0;
+  close(serial_port);
+
 }
