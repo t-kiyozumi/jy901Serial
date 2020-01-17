@@ -54,9 +54,14 @@ int main()
     printf("Error %i from tcsetattr: %s\n", errno, strerror(errno));
   }
 
-  unsigned char read_buf[128];
+  unsigned char read_buf[1];
+  unsigned char jy_buf[11];
+  int i = 0;
+
   memset(&read_buf, '\0', sizeof(read_buf));
+  memset(&jy_buf, '\0', sizeof(jy_buf));
   int num_bytes;
+  unsigned char Roll, RollH, RollL;
   while (1)
   {
     num_bytes = read(serial_port, &read_buf, sizeof(read_buf));
@@ -64,18 +69,32 @@ int main()
     {
       printf("Error reading: %s \n", strerror(errno));
     }
-   // printf("Received message: %s \n", read_buf);
-    for (int i = 0; i <= 128-11; i++)
+   // printf("%x ", read_buf[0]);
+    if (read_buf[0] == 0x55)
     {
-      if (read_buf[i] == 0x55)
+      printf("\n");
+      i = 0;
+      jy_buf[i] = read_buf[0];
+    }
+    jy_buf[i] = read_buf[0];
+
+    if (i == 10)
+    {
+     // printf("|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|\n", jy_buf[0], jy_buf[1], jy_buf[2], jy_buf[3], jy_buf[4], jy_buf[5], jy_buf[6], jy_buf[7], jy_buf[8], jy_buf[9], jy_buf[10]);
+      // if (jy_buf[1] == 0x51)
+      // {
+      //   printf("Acceleration Z : %f \n", ((jy_buf[7] << 8) | jy_buf[6]) / 32768.0 * (16.0 * 9.8));
+      // }
+      if (jy_buf[1] == 0x53)
       {
-        if (read_buf[i + 1] == 0x53)
-        {
-          printf("|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|\n", read_buf[i], read_buf[i + 1], read_buf[i + 2], read_buf[i + 3], read_buf[i + 4], read_buf[i + 5], read_buf[i + 6], read_buf[i + 7], read_buf[i + 8], read_buf[i + 9], read_buf[i + 10]);
-        }
+        printf("pich : %f \n", ((read_buf[6] << 8) | read_buf[4]) / 182.54);
+        printf("Roll : %f \n", ((read_buf[4] << 8) | read_buf[3]) / 182.54);
       }
     }
+      i++;
   }
   close(serial_port);
-
 }
+
+// if (read_buf[i + 10] == read_buf[i] + read_buf[i + 1] + read_buf[i + 2] + read_buf[i + 3] + read_buf[i + 4] + read_buf[i + 5] + read_buf[i + 6] + read_buf[i + 7] + read_buf[i + 8] + read_buf[i + 9])
+// {
