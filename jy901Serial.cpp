@@ -9,10 +9,56 @@
 #include <termios.h> // Contains POSIX terminal control definitions
 #include <unistd.h>  // write(), read(), close()
 
+void read_jy(int fd)
+{
+
+  unsigned char read_buf[1];
+  unsigned char jy_buf[11];
+  int i = 0;
+
+  memset(&read_buf, '\0', sizeof(read_buf));
+  memset(&jy_buf, '\0', sizeof(jy_buf));
+  int num_bytes;
+
+  while (1)
+  {
+    num_bytes = read(fd, &read_buf, sizeof(read_buf));
+    if (num_bytes < 0)
+    {
+      printf("Error reading: %s \n", strerror(errno));
+    }
+    // printf("%x ", read_buf[0]);
+    if (read_buf[0] == 0x55)
+    {
+      printf("\n");
+      i = 0;
+      jy_buf[i] = read_buf[0];
+    }
+    jy_buf[i] = read_buf[0];
+
+    if (i == 10)
+    {
+     // printf("|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|\n", jy_buf[0], jy_buf[1], jy_buf[2], jy_buf[3], jy_buf[4], jy_buf[5], jy_buf[6], jy_buf[7], jy_buf[8], jy_buf[9], jy_buf[10]);
+      // if (jy_buf[1] == 0x51)
+      // {
+      //   printf("Acceleration Z : %f \n", ((jy_buf[7] << 8) | jy_buf[6]) / 32768.0 * (16.0 * 9.8));
+      // }
+      if (jy_buf[1] == 0x53)
+      {
+        if (jy_buf[10] = jy_buf[0] + jy_buf[1] + jy_buf[2] + jy_buf[3] + jy_buf[4] + jy_buf[5] + jy_buf[6] + jy_buf[7] + jy_buf[8] + jy_buf[9])
+        {
+          printf("pich : %f \n", ((read_buf[6] << 8) | read_buf[4]) / 182.54);
+          printf("Roll : %f \n", ((read_buf[4] << 8) | read_buf[3]) / 182.54);
+        }
+      }
+    }
+    i++;
+  }
+}
+
 int main()
 {
   int serial_port = open("/dev/ttyUSB0", O_RDWR);
-
   // Create new termios struc, we call it 'tty' for convention
   struct termios tty;
   memset(&tty, 0, sizeof tty);
@@ -45,7 +91,7 @@ int main()
   tty.c_cc[VTIME] = 10; // Wait for up to 1s (10 deciseconds), returning as soon as any data is received.
   tty.c_cc[VMIN] = 0;
 
-  // Set in/out baud rate to be 9600
+  // Set in/out baud rate to be 115200
   cfsetispeed(&tty, B115200);
   cfsetospeed(&tty, B115200);
 
@@ -53,48 +99,6 @@ int main()
   {
     printf("Error %i from tcsetattr: %s\n", errno, strerror(errno));
   }
-
-  unsigned char read_buf[1];
-  unsigned char jy_buf[11];
-  int i = 0;
-
-  memset(&read_buf, '\0', sizeof(read_buf));
-  memset(&jy_buf, '\0', sizeof(jy_buf));
-  int num_bytes;
-  unsigned char Roll, RollH, RollL;
-  while (1)
-  {
-    num_bytes = read(serial_port, &read_buf, sizeof(read_buf));
-    if (num_bytes < 0)
-    {
-      printf("Error reading: %s \n", strerror(errno));
-    }
-   // printf("%x ", read_buf[0]);
-    if (read_buf[0] == 0x55)
-    {
-      printf("\n");
-      i = 0;
-      jy_buf[i] = read_buf[0];
-    }
-    jy_buf[i] = read_buf[0];
-
-    if (i == 10)
-    {
-     // printf("|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|%x|\n", jy_buf[0], jy_buf[1], jy_buf[2], jy_buf[3], jy_buf[4], jy_buf[5], jy_buf[6], jy_buf[7], jy_buf[8], jy_buf[9], jy_buf[10]);
-      // if (jy_buf[1] == 0x51)
-      // {
-      //   printf("Acceleration Z : %f \n", ((jy_buf[7] << 8) | jy_buf[6]) / 32768.0 * (16.0 * 9.8));
-      // }
-      if (jy_buf[1] == 0x53)
-      {
-        printf("pich : %f \n", ((read_buf[6] << 8) | read_buf[4]) / 182.54);
-        printf("Roll : %f \n", ((read_buf[4] << 8) | read_buf[3]) / 182.54);
-      }
-    }
-      i++;
-  }
+  read_jy(serial_port);
   close(serial_port);
 }
-
-// if (read_buf[i + 10] == read_buf[i] + read_buf[i + 1] + read_buf[i + 2] + read_buf[i + 3] + read_buf[i + 4] + read_buf[i + 5] + read_buf[i + 6] + read_buf[i + 7] + read_buf[i + 8] + read_buf[i + 9])
-// {
